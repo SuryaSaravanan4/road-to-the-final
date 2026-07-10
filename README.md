@@ -106,6 +106,41 @@ jobs:
       - run: curl -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" https://your-app.vercel.app/api/cron
 ```
 
+## Tracking a competition from a screenshot
+
+Informal competitions with no API — a bracket that exists only as a photo —
+can be ingested at `/competitions` → "From screenshot":
+
+1. Upload the image. Claude vision transcribes it into schema-validated
+   structured data (rounds, matchups, names, scores, dates) with a
+   per-field confidence. It never invents what it can't see.
+2. Review the editable preview: low-confidence fields are flagged
+   "needs review", and if the format (single-elim, double-elim,
+   round-robin, groups+knockout) couldn't be detected confidently you must
+   pick it before anything else unlocks. **Nothing becomes competition data
+   until you confirm.**
+3. Once confirmed, the bracket is ground truth exactly like an official
+   provider's: the same reasoning, ranking, and UI run on it unmodified.
+   Upload a later screenshot ("Update from screenshot") to add new results —
+   changes to already-confirmed data are shown as an explicit diff with
+   conflicts called out, never silently overwritten.
+
+Design decisions, format support, and the security/accessibility posture
+are recorded in `docs/adr/0001-screenshot-bracket-ingestion.md`.
+
+**⚠ Durability:** screenshot competitions are stored in the database and are
+*not re-fetchable from anywhere*. On Vercel, the default SQLite-in-`/tmp`
+setup (see "Deploying to Vercel" below) is wiped on cold starts — fine for
+the cache, **fatal for ingested competitions**. If you deploy screenshot
+ingestion anywhere serverless, point `DATABASE_URL` at a persistent
+database (Neon, Turso, Vercel Postgres, or any host with a real disk).
+
+**⚠ No accounts yet:** Phase 1 has no user model — ingestion and
+confirmation are unauthenticated, so treat a deployment as single-tenant
+and don't expose it publicly if that matters. Uploads are validated by
+actual image content (not claimed MIME type) and extraction calls are
+rate-limited, but authentication is deliberately deferred to Phase 2.
+
 ## Adding a new sport/league
 
 1. Implement `SportsProvider` (`src/providers/SportsProvider.ts`) for the
@@ -124,8 +159,12 @@ depend only on the `SportsProvider` interface and the shared domain types in
 npm test
 ```
 
-Covers the scenario-ranking logic (`src/lib/scenario-ranking.ts`): sort
-order, tie-breaking, and rank assignment.
+Covers scenario ranking, stage ordering and elimination rules (single- and
+double-elimination), the `road-to-final` orchestration (confirmed-opponent
+short-circuit, elimination, provider stage order), the screenshot pipeline's
+pure logic (extraction schema rejection, corrected-draft conversion,
+re-ingestion diff/merge), and the upload security validations (image
+sniffing, rate limiting, origin checks).
 
 ## Deploying to Vercel
 

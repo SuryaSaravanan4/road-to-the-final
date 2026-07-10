@@ -1,6 +1,14 @@
 import { getProvider } from "@/providers/registry";
 import { getCached } from "@/lib/cache";
 import { rankScenarios } from "@/lib/scenario-ranking";
+import {
+  GROUP_STAGE,
+  GRAND_FINAL_STAGE,
+  KNOCKOUT_STAGE_ORDER,
+  isLosersBracketStage,
+  lossEndsRoad,
+  stageRank,
+} from "@/lib/stages";
 import { buildScenarioPrompt } from "@/reasoning/buildScenarioPrompt";
 import { generateScenarios } from "@/reasoning/claude-client";
 import type { RoundPath } from "@/types/domain";
@@ -12,24 +20,6 @@ const CACHE_TTL_MS = 15 * 60 * 1000;
 // unauthenticated public endpoint calling forceRefresh in a loop could
 // burn through football-data.org's rate limit and the Anthropic budget.
 const MIN_FORCE_REFRESH_INTERVAL_MS = 60 * 1000;
-
-// Order used to sort whatever knockout stages actually appear in the
-// provider's fixture data — not every stage needs to be present (e.g. a
-// 48-team World Cup has a Round of 32 that a 32-team bracket wouldn't).
-const KNOCKOUT_STAGE_ORDER = [
-  "LAST_32",
-  "ROUND_OF_32",
-  "LAST_16",
-  "ROUND_OF_16",
-  "QUARTER_FINALS",
-  "SEMI_FINALS",
-  "FINAL",
-];
-
-function stageRank(stage: string): number {
-  const index = KNOCKOUT_STAGE_ORDER.indexOf(stage);
-  return index === -1 ? KNOCKOUT_STAGE_ORDER.length : index;
-}
 
 export interface TournamentPathResult {
   teamName: string;
@@ -55,6 +45,11 @@ export async function getTournamentPath(params: {
     getCached(`${providerKey}:fixtures`, ttl, () => provider.getFixtures()),
   ]);
 
+  // Providers with their own round order (screenshot competitions) supply
+  // it; everything else falls back to the fixed knockout vocabulary.
+  const stageOrder = (await provider.getStageOrder?.()) ?? KNOCKOUT_STAGE_ORDER;
+  const eliminationRule = (await provider.getEliminationRule?.()) ?? "single-loss";
+
   const standings = standingsResult.data;
   const fixtures = fixturesResult.data;
 
@@ -62,21 +57,38 @@ export async function getTournamentPath(params: {
   const teamFixtures = fixtures.filter((f) => f.homeTeamId === teamId || f.awayTeamId === teamId);
 
   const knockoutStages = Array.from(
-    new Set(fixtures.filter((f) => f.stage !== "GROUP_STAGE").map((f) => f.stage))
-  ).sort((a, b) => stageRank(a) - stageRank(b));
+    new Set(fixtures.filter((f) => f.stage !== GROUP_STAGE).map((f) => f.stage))
+  ).sort((a, b) => stageRank(a, stageOrder) - stageRank(b, stageOrder));
 
   const rounds: RoundPath[] = [];
 
+  // Double elimination only: set once a winners-bracket loss is confirmed.
+  let inLosersBracket = false;
+
   for (const stage of knockoutStages) {
+    // Double elimination shows the shortest remaining road: losers-bracket
+    // rounds appear only once the team has actually dropped into them (or
+    // the bracket already schedules the team there), and winners-bracket
+    // rounds disappear once it has. The grand final is on every path.
+    if (eliminationRule === "double-loss" && stage !== GRAND_FINAL_STAGE) {
+      const teamHasFixtureInStage = teamFixtures.some((f) => f.stage === stage);
+      if (!teamHasFixtureInStage && isLosersBracketStage(stage) !== inLosersBracket) {
+        continue;
+      }
+    }
+
     const playedInStage = teamFixtures.find((f) => f.stage === stage && f.status === "FINISHED");
     if (playedInStage) {
       rounds.push({ stage, completed: true, result: playedInStage });
-      // A confirmed knockout loss ends the road to the final — later stages
-      // would otherwise still get (real, costed) Claude-generated scenarios
-      // for a team that's already out. A missing winnerTeamId is treated as
-      // inconclusive rather than assumed elimination.
+      // A confirmed loss ends the road to the final — unless the format's
+      // elimination rule says otherwise (a winners-bracket loss in double
+      // elimination just drops the team into the losers bracket). Later
+      // stages would otherwise still get (real, costed) Claude-generated
+      // scenarios for a team that's already out. A missing winnerTeamId is
+      // treated as inconclusive rather than assumed elimination.
       if (playedInStage.winnerTeamId && playedInStage.winnerTeamId !== teamId) {
-        break;
+        if (lossEndsRoad(stage, eliminationRule)) break;
+        inLosersBracket = true;
       }
       continue;
     }
@@ -106,7 +118,7 @@ export async function getTournamentPath(params: {
         teamName,
         currentStage: stage,
         standings,
-        relevantFixtures: fixtures.filter((f) => f.stage === stage || f.stage === "GROUP_STAGE"),
+        relevantFixtures: fixtures.filter((f) => f.stage === stage || f.stage === GROUP_STAGE),
       });
       const response = await generateScenarios(prompt);
       const stageEntry = response.rounds.find((r) => r.stage === stage) ?? response.rounds[0];
@@ -120,14 +132,20 @@ export async function getTournamentPath(params: {
   // (eliminated, or the whole run is finished), fall back to the last round
   // reached, and only default to GROUP_STAGE when no bracket exists yet.
   const currentRound = rounds.find((r) => !r.completed);
-  const currentStage = currentRound?.stage ?? rounds[rounds.length - 1]?.stage ?? "GROUP_STAGE";
+  const currentStage = currentRound?.stage ?? rounds[rounds.length - 1]?.stage ?? GROUP_STAGE;
+
+  // Pure-knockout competitions (most screenshot brackets) have no standings
+  // row to read a record from — derive it from the team's finished fixtures.
+  const finished = teamFixtures.filter((f) => f.status === "FINISHED");
+  const won = finished.filter((f) => f.winnerTeamId === teamId).length;
+  const lost = finished.filter((f) => f.winnerTeamId && f.winnerTeamId !== teamId).length;
 
   return {
     teamName,
     currentStage,
     record: teamStanding
       ? { played: teamStanding.played, won: teamStanding.won, draw: teamStanding.draw, lost: teamStanding.lost }
-      : { played: 0, won: 0, draw: 0, lost: 0 },
+      : { played: finished.length, won, draw: finished.length - won - lost, lost },
     rounds,
     dataFetchedAt: fixturesResult.cachedAt.toISOString(),
     stale: standingsResult.stale || fixturesResult.stale,

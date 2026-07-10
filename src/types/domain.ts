@@ -30,6 +30,15 @@ export interface BracketNode {
   fixtures: Fixture[];
 }
 
+/**
+ * How a confirmed loss affects a team's road to the final:
+ * - "single-loss": one knockout loss eliminates (single-elimination brackets,
+ *   the default for every provider that doesn't say otherwise).
+ * - "double-loss": only a losers-bracket loss (or a grand-final loss)
+ *   eliminates — double-elimination brackets.
+ */
+export type EliminationRule = "single-loss" | "double-loss";
+
 export type Difficulty = "easy" | "medium" | "hard";
 
 export interface ScenarioInput {

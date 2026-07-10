@@ -14,3 +14,57 @@ model CacheEntry {
   payload   String
   fetchedAt DateTime @default(now())
 }
+
+// A screenshot-ingested competition. Unlike CacheEntry this is NOT
+// re-fetchable from any upstream — it is user-confirmed ground truth, so it
+// must live in a persistent database (see README's Vercel /tmp warning).
+// The JSON columns hold the current confirmed canonical state; the full
+// audit trail of how it got there lives in Ingestion rows.
+model Competition {
+  id         String      @id @default(cuid())
+  name       String
+  sport      String      @default("unknown")
+  // Bracket shape only — who plays whom: SINGLE_ELIM | DOUBLE_ELIM |
+  // ROUND_ROBIN | GROUPS_KNOCKOUT.
+  format     String
+  // How standing/advancement is determined — a separate axis from format.
+  // Null means win/loss elimination (the only Phase 1 behavior). Reserved
+  // for rating-based competitions (e.g. "ELO") so supporting them later is
+  // a new value here, not a schema migration.
+  ratingSystem String?
+  // JSON: [{ id, name }] — stable generated team ids for this competition.
+  teams      String
+  // JSON: Fixture[] (src/types/domain.ts shape).
+  fixtures   String
+  // JSON: Standing[] — only populated for formats with a table component.
+  standings  String
+  // JSON: string[] — the competition's real round order, first to last.
+  stageOrder String
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  ingestions Ingestion[]
+}
+
+// One screenshot upload: the source image, exactly what Claude extracted
+// (with per-field confidences), the user's corrections, and the diff that
+// was applied to the Competition on confirm — kept together so bad
+// extractions can be debugged after the fact.
+model Ingestion {
+  id             String       @id @default(cuid())
+  // Set at upload time when re-ingesting into an existing competition;
+  // otherwise null until the draft is confirmed into a new one.
+  competitionId  String?
+  competition    Competition? @relation(fields: [competitionId], references: [id])
+  imageData      String // base64
+  imageMediaType String
+  // JSON: the schema-validated extraction exactly as Claude returned it.
+  rawExtraction  String
+  // JSON: field-level user edits made in the confirmation preview.
+  corrections    String?
+  // JSON: the diff applied to the competition's confirmed state on confirm.
+  appliedDiff    String?
+  // DRAFT | CONFIRMED | DISCARDED
+  status         String       @default("DRAFT")
+  createdAt      DateTime     @default(now())
+  confirmedAt    DateTime?
+}

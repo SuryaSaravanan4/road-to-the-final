@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { TournamentPathResult } from "@/lib/road-to-final";
+import { readSelection, selectionQuery } from "@/lib/selection";
 
 const AUTO_REFRESH_MS = 15 * 60 * 1000;
 
@@ -14,7 +15,7 @@ export function useTournamentPath() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const res = await fetch("/api/path");
+      const res = await fetch(`/api/path${selectionQuery(readSelection())}`);
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Failed to load");
       setData(json);
@@ -29,7 +30,7 @@ export function useTournamentPath() {
     setRefreshing(true);
     setError(null);
     try {
-      const res = await fetch("/api/refresh", { method: "POST" });
+      const res = await fetch(`/api/refresh${selectionQuery(readSelection())}`, { method: "POST" });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Refresh failed");
       setData(json);

@@ -41,6 +41,15 @@ export default function HomePage() {
           View full path to the final →
         </Link>
       )}
+
+      <p className="mt-8">
+        <Link
+          href="/competitions"
+          className="font-mono text-xs uppercase tracking-wider text-chalk/60 hover:text-chalk"
+        >
+          Change competition or team →
+        </Link>
+      </p>
     </main>
   );
 }

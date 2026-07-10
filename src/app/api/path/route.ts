@@ -1,14 +1,16 @@
 import { NextResponse } from "next/server";
 import { getTournamentPath } from "@/lib/road-to-final";
-import { getTrackedTeamConfig } from "@/lib/tracked-team";
+import { resolveTrackedSelection } from "@/lib/tracked-team";
 
-export async function GET() {
-  const { providerKey, teamId, teamName } = getTrackedTeamConfig();
+export async function GET(request: Request) {
+  const { providerKey, teamId, teamName } = resolveTrackedSelection(
+    new URL(request.url).searchParams
+  );
 
   if (!teamId) {
     return NextResponse.json(
-      { error: "TRACKED_TEAM_ID is not configured. Set it in .env.local." },
-      { status: 500 }
+      { error: "No tracked team: pick one at /competitions or set TRACKED_TEAM_ID in .env.local." },
+      { status: 400 }
     );
   }
 
