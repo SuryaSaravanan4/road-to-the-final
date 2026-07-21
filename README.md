@@ -128,6 +128,28 @@ can be ingested at `/competitions` → "From screenshot":
 Design decisions, format support, and the security/accessibility posture
 are recorded in `docs/adr/0001-screenshot-bracket-ingestion.md`.
 
+### Is the "needs review" flag worth anything?
+
+Each ingestion stores what Claude read (with a confidence per field) next to
+what the human confirmed, so the two can be compared after the fact:
+
+```bash
+npm run calibration           # summary
+npm run calibration -- --edits  # plus every individual correction
+```
+
+It reports how often humans actually corrected each field type, whether
+confidence predicts those corrections at all (an AUC of 0.5 means it does
+not), and how the live `CONFIDENCE_CONFIRM_THRESHOLD` performs as an error
+detector — how much of the flagged work was worth doing, and how many wrong
+values sailed through unflagged into ground truth. The comparison baseline is
+what the confirmation preview would have submitted untouched, so its
+auto-filled round names, trimming, and winner round-trip are never miscounted
+as human corrections (`src/lib/calibration.ts`).
+
+The numbers only mean something once a real number of brackets have been
+confirmed; with a handful of ingestions treat it as a smoke test.
+
 **⚠ Durability:** screenshot competitions are stored in the database and are
 *not re-fetchable from anywhere*. On Vercel, the default SQLite-in-`/tmp`
 setup (see "Deploying to Vercel" below) is wiped on cold starts — fine for
@@ -163,8 +185,10 @@ Covers scenario ranking, stage ordering and elimination rules (single- and
 double-elimination), the `road-to-final` orchestration (confirmed-opponent
 short-circuit, elimination, provider stage order), the screenshot pipeline's
 pure logic (extraction schema rejection, corrected-draft conversion,
-re-ingestion diff/merge), and the upload security validations (image
-sniffing, rate limiting, origin checks).
+re-ingestion diff/merge), the confidence-calibration pairing (which preview
+normalizations must not count as human corrections, and the metrics over
+them), and the upload security validations (image sniffing, rate limiting,
+origin checks).
 
 ## Deploying to Vercel
 
