@@ -69,13 +69,31 @@ on demand.
 
 ## Ready to build now
 
-### The reasoning layer has no feedback at all
+### Reasoning-layer feedback — designed, Phase A ready
 
 Everything above concerns extraction. `src/reasoning/` produces scenario
 difficulty and likelihood assessments, and nothing captures whether a user
-found a ranking sensible. There is no signal to calibrate against and no
-schema to store one. Decide what the signal even is (per-scenario thumbs?
-a correction of the difficulty band?) before building storage for it.
+found a ranking sensible. The blocking question — *what is the signal?* — is
+now decided in **`docs/adr/0002-reasoning-feedback.md`**: a one-click
+`agree`/`disagree` per scenario, disagreement optionally refined by a corrected
+difficulty band and a note; likelihood is not directly correctable; only
+`source: "model"` scenarios are targets (the bracket-confirmed synthetic ones
+are excluded, like extraction's not-human-authored fields).
+
+The load-bearing difference from extraction: a difficulty assessment has **no
+ground truth** and scenarios are **ephemeral** (regenerated every TTL, never
+persisted). So each feedback row must snapshot the assessment as shown — the
+analog of `rawExtraction` — and the eventual report yields an *agreement rate*,
+not an error rate.
+
+**Phase A (buildable now):** add `source` to `ScenarioInput`/`RankedScenario`
+and set it in `road-to-final.ts`; a `SCENARIO_PROMPT_VERSION` constant on
+`buildScenarioPrompt` (so feedback is attributable to a prompt era); the
+`ScenarioFeedback` model + migration; `POST /api/path/feedback`; and the
+agree/disagree control in `ScenarioCard.tsx`. **Phase B (blocked on data, the
+same gate as the extraction items above):** the `reasoning-feedback` report and
+feeding disagreements back into the prompt. See the ADR for the schema and the
+single-tenant last-write-wins caveat that Phase 2 accounts change.
 
 ## Prerequisite for scaling any of this
 
