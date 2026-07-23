@@ -45,6 +45,8 @@ export default function PathPage() {
               index={index}
               lit={currentIndex === -1 || index <= currentIndex}
               isCurrent={index === currentIndex}
+              providerKey={data.providerKey}
+              teamId={data.teamId}
             />
           ))}
         </div>

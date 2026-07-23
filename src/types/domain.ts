@@ -41,6 +41,14 @@ export type EliminationRule = "single-loss" | "double-loss";
 
 export type Difficulty = "easy" | "medium" | "hard";
 
+/**
+ * Where a scenario's assessment came from — the axis reasoning feedback keys
+ * on. "model" scenarios are Claude's judgment and are the only feedback
+ * targets; "bracket" scenarios are synthesized when the opponent is already
+ * confirmed by the published bracket (no reasoning to judge). See ADR 0002.
+ */
+export type ScenarioSource = "model" | "bracket";
+
 export interface ScenarioInput {
   opponentId: string;
   opponentName: string;
@@ -48,6 +56,7 @@ export interface ScenarioInput {
   /** 0-100 probability this specific matchup occurs. */
   likelihood: number;
   reasoning: string;
+  source: ScenarioSource;
 }
 
 export interface RankedScenario extends ScenarioInput {

@@ -45,6 +45,40 @@ model Competition {
   ingestions Ingestion[]
 }
 
+// A human verdict on one Claude-assessed scenario (ADR 0002). Unlike an
+// extraction correction there is no ground truth to diff against — a difficulty
+// assessment is a judgment, and the live scenario is regenerated every cache
+// TTL and never persisted. So this row SNAPSHOTS the assessment as it was
+// shown (the "raw" side) next to the verdict (the "corrected" side); the report
+// it feeds yields an agreement rate, not an error rate.
+model ScenarioFeedback {
+  id            String   @id @default(cuid())
+  // Identity of the scenario slot at feedback time.
+  providerKey   String
+  teamId        String
+  stage         String
+  opponentId    String
+  opponentName  String
+  // The assessment exactly as shown — frozen, since the live one is gone.
+  source        String // "model" | "bracket" (ScenarioSource)
+  difficulty    String // easy | medium | hard, as shown
+  likelihood    Int // 0-100, as shown
+  reasoning     String // verbatim
+  model         String? // ANTHROPIC_MODEL that produced it
+  promptVersion String? // SCENARIO_PROMPT_VERSION at feedback time
+  // The human verdict.
+  verdict              String // "agree" | "disagree"
+  difficultyCorrection String? // easy | medium | hard, only if the user reset it
+  note                 String? // optional free text
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Single-tenant, last-write-wins per scenario slot: Phase 1 has no user
+  // model, so this is one opinion per scenario, not one per user. With Phase 2
+  // accounts the key gains userId and the history becomes worth keeping.
+  @@unique([providerKey, teamId, stage, opponentId])
+}
+
 // One screenshot upload: the source image, exactly what Claude extracted
 // (with per-field confidences), the user's corrections, and the diff that
 // was applied to the Competition on confirm — kept together so bad

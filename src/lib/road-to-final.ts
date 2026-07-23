@@ -22,6 +22,11 @@ const CACHE_TTL_MS = 15 * 60 * 1000;
 const MIN_FORCE_REFRESH_INTERVAL_MS = 60 * 1000;
 
 export interface TournamentPathResult {
+  // Echoed back so the client always knows the exact identity that produced
+  // these scenarios — the browser may be on the env-var default team and have
+  // no local selection to reconstruct it (feedback keys on this). See ADR 0002.
+  providerKey: string;
+  teamId: string;
   teamName: string;
   currentStage: string;
   record: { played: number; won: number; draw: number; lost: number };
@@ -106,6 +111,9 @@ export async function getTournamentPath(params: {
             difficulty: "medium",
             likelihood: 100,
             reasoning: "Opponent confirmed by the published bracket.",
+            // Not a model judgment — the bracket already decided this. Tagged
+            // so the UI shows no feedback control and the report excludes it.
+            source: "bracket",
           },
         ]),
       });
@@ -125,7 +133,13 @@ export async function getTournamentPath(params: {
       return stageEntry?.scenarios ?? [];
     });
 
-    rounds.push({ stage, completed: false, scenarios: rankScenarios(scenarioResult.data) });
+    // The reasoning schema carries no source; every scenario on this path is
+    // Claude's own judgment, so it is the model-generated feedback target.
+    rounds.push({
+      stage,
+      completed: false,
+      scenarios: rankScenarios(scenarioResult.data.map((s) => ({ ...s, source: "model" as const }))),
+    });
   }
 
   // The current stage is whichever round is still in progress; if none is
@@ -141,6 +155,8 @@ export async function getTournamentPath(params: {
   const lost = finished.filter((f) => f.winnerTeamId && f.winnerTeamId !== teamId).length;
 
   return {
+    providerKey,
+    teamId,
     teamName,
     currentStage,
     record: teamStanding

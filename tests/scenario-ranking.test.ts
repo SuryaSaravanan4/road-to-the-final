@@ -9,6 +9,7 @@ function scenario(overrides: Partial<ScenarioInput>): ScenarioInput {
     difficulty: "medium",
     likelihood: 50,
     reasoning: "test",
+    source: "model",
     ...overrides,
   };
 }

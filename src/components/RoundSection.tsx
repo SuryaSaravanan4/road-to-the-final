@@ -24,11 +24,15 @@ export function RoundSection({
   index,
   lit,
   isCurrent,
+  providerKey,
+  teamId,
 }: {
   round: RoundPath;
   index: number;
   lit: boolean;
   isCurrent: boolean;
+  providerKey: string;
+  teamId: string;
 }) {
   const label = STAGE_LABELS[round.stage] ?? round.stage;
   const contentStyle = {
@@ -69,7 +73,13 @@ export function RoundSection({
         ) : (
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             {round.scenarios?.map((scenario) => (
-              <ScenarioCard key={scenario.opponentId} scenario={scenario} />
+              <ScenarioCard
+                key={scenario.opponentId}
+                scenario={scenario}
+                providerKey={providerKey}
+                teamId={teamId}
+                stage={round.stage}
+              />
             ))}
           </div>
         )}

@@ -1,6 +1,14 @@
 import type { Standing, Fixture } from "@/types/domain";
 
 /**
+ * Bumped whenever the scenario prompt below changes in a way that could shift
+ * the assessments. Reasoning feedback is stamped with the version that produced
+ * it (ADR 0002) so a prompt change can be measured against the agreement rate
+ * rather than pooling incomparable eras — the lever the whole loop turns on.
+ */
+export const SCENARIO_PROMPT_VERSION = "1";
+
+/**
  * Builds the prompt for the Claude reasoning step. Every fact in the prompt
  * comes from data already fetched from the sports provider — Claude is only
  * asked to reason over it (assess difficulty/likelihood), never to invent

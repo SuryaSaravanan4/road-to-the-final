@@ -112,7 +112,7 @@ describe("getTournamentPath — single elimination", () => {
 
     const scenarios = result.rounds[0].scenarios!;
     expect(scenarios).toHaveLength(1);
-    expect(scenarios[0]).toMatchObject({ opponentId: "opp", likelihood: 100 });
+    expect(scenarios[0]).toMatchObject({ opponentId: "opp", likelihood: 100, source: "bracket" });
     expect(generateScenarios).not.toHaveBeenCalled();
   });
 
@@ -140,6 +140,8 @@ describe("getTournamentPath — single elimination", () => {
     expect(generateScenarios).toHaveBeenCalledTimes(1);
     expect(result.rounds[0].scenarios!.map((s) => s.opponentId)).toEqual(["e", "h"]);
     expect(result.rounds[0].scenarios![0].rank).toBe(1);
+    // Claude-assessed scenarios are the feedback targets.
+    expect(result.rounds[0].scenarios!.every((s) => s.source === "model")).toBe(true);
   });
 
   it("derives the record from finished fixtures when standings are empty", async () => {
