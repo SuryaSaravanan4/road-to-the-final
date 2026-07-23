@@ -151,14 +151,18 @@ export function IngestReview({
   extraction,
   existing,
   confirming,
+  discarding,
   serverError,
   onConfirm,
+  onDiscard,
 }: {
   extraction: BracketExtraction;
   existing: ExistingState | null;
   confirming: boolean;
+  discarding: boolean;
   serverError: string | null;
   onConfirm: (corrected: CorrectedExtraction) => void;
+  onDiscard: (reason: string) => void;
 }) {
   const formatUncertain = lowConfidence({ confidence: extraction.formatConfidence });
   const [format, setFormat] = useState<CompetitionFormat | "">(
@@ -169,6 +173,8 @@ export function IngestReview({
   const [rounds, setRounds] = useState<RoundEdit[]>(() => initRounds(extraction));
   const [groups, setGroups] = useState<GroupEdit[]>(() => initGroups(extraction));
   const [localError, setLocalError] = useState<string | null>(null);
+  const [showDiscard, setShowDiscard] = useState(false);
+  const [discardReason, setDiscardReason] = useState("");
 
   const patchMatchup = (r: number, m: number, patch: Partial<MatchupEdit>) => {
     setRounds((prev) =>
@@ -606,17 +612,69 @@ export function IngestReview({
         )}
       </div>
 
-      <button
-        type="button"
-        onClick={handleConfirm}
-        disabled={confirming || !format}
-        className="rounded-sm border border-floodlight px-4 py-2 font-mono text-sm font-bold uppercase tracking-wider text-floodlight transition-colors hover:bg-floodlight/10 disabled:opacity-50"
-      >
-        {confirming ? "Confirming…" : existing ? "Approve changes" : "Confirm bracket"}
-      </button>
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={handleConfirm}
+          disabled={confirming || discarding || !format}
+          className="rounded-sm border border-floodlight px-4 py-2 font-mono text-sm font-bold uppercase tracking-wider text-floodlight transition-colors hover:bg-floodlight/10 disabled:opacity-50"
+        >
+          {confirming ? "Confirming…" : existing ? "Approve changes" : "Confirm bracket"}
+        </button>
+        {!showDiscard && (
+          <button
+            type="button"
+            onClick={() => setShowDiscard(true)}
+            disabled={confirming || discarding}
+            className="font-mono text-xs font-bold uppercase tracking-wider text-chalk/50 underline decoration-dotted underline-offset-4 transition-colors hover:text-live-red disabled:opacity-50"
+          >
+            Discard this read
+          </button>
+        )}
+      </div>
       <p className="font-body text-xs text-chalk/60">
         Nothing is saved as this competition&apos;s truth until you confirm.
       </p>
+
+      {showDiscard && (
+        <section className="rounded border border-live-red/60 bg-live-red/[0.06] p-4">
+          <h2 className={LABEL}>Discard this extraction</h2>
+          <p className="mt-2 font-body text-sm text-chalk/80">
+            Use this when the read is too wrong to be worth correcting. Nothing becomes competition
+            data, but the draft is kept as a signal that the extraction failed here — an optional
+            note helps say why.
+          </p>
+          <label htmlFor="discard-reason" className={`mt-3 block ${LABEL}`}>
+            Reason (optional)
+          </label>
+          <input
+            id="discard-reason"
+            className={`mt-1 ${INPUT}`}
+            value={discardReason}
+            maxLength={500}
+            placeholder="e.g. wrong tournament, unreadable, half the bracket cropped off"
+            onChange={(e) => setDiscardReason(e.target.value)}
+          />
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => onDiscard(discardReason.trim())}
+              disabled={confirming || discarding}
+              className="rounded-sm border border-live-red px-4 py-2 font-mono text-sm font-bold uppercase tracking-wider text-live-red transition-colors hover:bg-live-red/10 disabled:opacity-50"
+            >
+              {discarding ? "Discarding…" : "Discard draft"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowDiscard(false)}
+              disabled={discarding}
+              className={SMALL_BUTTON}
+            >
+              Keep editing
+            </button>
+          </div>
+        </section>
+      )}
     </div>
   );
 }

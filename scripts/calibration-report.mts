@@ -26,6 +26,22 @@ const pct = (value: number | null, digits = 1) =>
 
 const num = (value: number, width = 5) => String(value).padStart(width);
 
+/** Discarded drafts: count and the reasons humans gave, if any. */
+function reportDiscards(discards: { id: string; discardReason: string | null }[]) {
+  if (discards.length === 0) return;
+  const withReason = discards.filter((d) => d.discardReason && d.discardReason.trim() !== "");
+  console.log(`\nDiscarded drafts — ${discards.length} (extractions abandoned, not corrected)`);
+  console.log("-".repeat(64));
+  if (withReason.length === 0) {
+    console.log("  No reasons recorded.");
+  } else {
+    for (const d of withReason) console.log(`  ${d.id}  ${d.discardReason!.trim()}`);
+    if (withReason.length < discards.length) {
+      console.log(`  (${discards.length - withReason.length} more with no reason given)`);
+    }
+  }
+}
+
 async function main() {
   const showEdits = process.argv.includes("--edits");
 
@@ -40,7 +56,18 @@ async function main() {
     },
   });
 
+  // Discards are the other terminal state: extractions a human saw and judged
+  // not worth correcting. They carry no field-level corrections to calibrate,
+  // but their count and reasons are the strongest negative signal available —
+  // "this read was so wrong it wasn't fixed" — so surface them alongside.
+  const discards = await prisma.ingestion.findMany({
+    where: { status: "DISCARDED" },
+    orderBy: { discardedAt: "asc" },
+    select: { id: true, discardReason: true },
+  });
+
   if (ingestions.length === 0) {
+    reportDiscards(discards);
     console.log(
       "No confirmed ingestions with corrections yet — nothing to calibrate.\n" +
         "Confirm a screenshot at /competitions to start collecting evidence."
@@ -85,6 +112,8 @@ async function main() {
     `  Confidence AUC      ${auc === null ? "    —" : auc.toFixed(3)}   ` +
       `(0.5 = confidence predicts nothing; ${nEdited} edited vs ${nClean} clean)`
   );
+
+  reportDiscards(discards);
 
   console.log(`\nReview threshold (flags confidence < ${CONFIDENCE_CONFIRM_THRESHOLD})`);
   console.log("-".repeat(64));

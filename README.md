@@ -118,7 +118,9 @@ can be ingested at `/competitions` → "From screenshot":
    "needs review", and if the format (single-elim, double-elim,
    round-robin, groups+knockout) couldn't be detected confidently you must
    pick it before anything else unlocks. **Nothing becomes competition data
-   until you confirm.**
+   until you confirm** — and if a read is too wrong to be worth fixing,
+   "Discard this read" records that (with an optional reason) instead of
+   silently throwing the extraction away.
 3. Once confirmed, the bracket is ground truth exactly like an official
    provider's: the same reasoning, ranking, and UI run on it unmodified.
    Upload a later screenshot ("Update from screenshot") to add new results —
@@ -145,7 +147,9 @@ detector — how much of the flagged work was worth doing, and how many wrong
 values sailed through unflagged into ground truth. The comparison baseline is
 what the confirmation preview would have submitted untouched, so its
 auto-filled round names, trimming, and winner round-trip are never miscounted
-as human corrections (`src/lib/calibration.ts`).
+as human corrections (`src/lib/calibration.ts`). Drafts that were *discarded*
+rather than confirmed are listed too, with any reason given — the negative
+signal that an extraction wasn't worth correcting at all.
 
 The numbers only mean something once a real number of brackets have been
 confirmed; with a handful of ingestions treat it as a smoke test.

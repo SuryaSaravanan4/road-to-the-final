@@ -65,6 +65,10 @@ model Ingestion {
   appliedDiff    String?
   // DRAFT | CONFIRMED | DISCARDED
   status         String       @default("DRAFT")
+  // Free-text reason captured when a DRAFT is discarded — the negative signal
+  // "this extraction was too wrong to be worth fixing". Null unless DISCARDED.
+  discardReason  String?
   createdAt      DateTime     @default(now())
   confirmedAt    DateTime?
+  discardedAt    DateTime?
 }

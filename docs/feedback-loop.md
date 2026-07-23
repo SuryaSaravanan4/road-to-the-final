@@ -29,6 +29,16 @@ Two things to know before trusting its output:
   does not, the numbers quietly drift. `tests/calibration.test.ts` pins the
   specific behaviors; a shared projection module would be the real fix.
 
+**Discard path** (`POST /api/ingest/[id]/discard`, "Discard this read" in
+`IngestReview`). A DRAFT can now reach `DISCARDED` — the human saw the read and
+judged it not worth correcting — with an optional free-text reason
+(`Ingestion.discardReason`, `discardedAt`). This is the strongest negative
+signal the pipeline has, and it no longer vanishes when someone navigates away
+from a bad draft. `npm run calibration` prints the discard count and the reasons
+given. Discards carry no per-field corrections, so they stay out of the edit-rate
+and AUC numbers; they are counted, not calibrated. The transition is guarded to
+DRAFT-only, same-origin like confirm.
+
 ## Blocked on data
 
 As of the last run there is **one** usable confirmed ingestion — 22 comparable
@@ -58,14 +68,6 @@ changes on the result. Needs a decision on cost and on whether it runs in CI or
 on demand.
 
 ## Ready to build now
-
-### `DISCARDED` is a dead status
-
-`Ingestion.status` documents `DRAFT | CONFIRMED | DISCARDED`, but nothing in
-`src/` ever sets `DISCARDED`. A user who abandons a bad draft leaves no record,
-so the strongest negative signal available — "this extraction was so wrong it
-wasn't worth fixing" — is dropped on the floor. Add the discard path plus a
-short reason, and count discards in the calibration report.
 
 ### The reasoning layer has no feedback at all
 

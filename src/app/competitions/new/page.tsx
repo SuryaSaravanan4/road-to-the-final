@@ -23,6 +23,7 @@ function NewCompetitionInner() {
   const [extracting, setExtracting] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [discarding, setDiscarding] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -83,6 +84,27 @@ function NewCompetitionInner() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Confirm failed");
       setConfirming(false);
+    }
+  };
+
+  const discard = async (reason: string) => {
+    if (!draft) return;
+    setDiscarding(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/ingest/${draft.ingestionId}/discard`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Discard failed");
+      // A discarded draft touches no competition — nothing to select, just
+      // return to the list.
+      router.push("/competitions");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Discard failed");
+      setDiscarding(false);
     }
   };
 
@@ -148,8 +170,10 @@ function NewCompetitionInner() {
           extraction={draft.extraction}
           existing={existing}
           confirming={confirming}
+          discarding={discarding}
           serverError={error}
           onConfirm={confirm}
+          onDiscard={discard}
         />
       )}
 
