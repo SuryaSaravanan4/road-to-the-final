@@ -1,0 +1,30 @@
+name: Refresh tournament data
+
+# Vercel Cron on the Hobby plan only fires ~once per day regardless of the
+# expression in vercel.json. This workflow is the actual 15-minute scheduler
+# for Hobby: it pings the same /api/cron endpoint on a schedule.
+#
+# Required repo secrets (Settings -> Secrets and variables -> Actions):
+#   PROD_URL              e.g. https://road-to-the-final-two.vercel.app
+#   CRON_SECRET           must match the CRON_SECRET env var on Vercel
+#   VERCEL_BYPASS_SECRET  only if Deployment Protection is left enabled;
+#                         create it in Project Settings -> Deployment
+#                         Protection -> Protection Bypass for Automation.
+#                         Omit the secret (and the header line) if the
+#                         project has no deployment protection.
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hit /api/cron
+        run: |
+          curl -sS --fail-with-body -m 60 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "x-vercel-protection-bypass: ${{ secrets.VERCEL_BYPASS_SECRET }}" \
+            "${{ secrets.PROD_URL }}/api/cron"

@@ -9,7 +9,7 @@ sport/league is just a new provider, not a rewrite.
 
 1. **Ground-truth data** comes from a real sports API (see below) — never
    from an LLM guessing at scores or bracket positions.
-2. That data is cached in SQLite with a ~15 minute TTL (`src/lib/cache.ts`),
+2. That data is cached in Postgres with a ~15 minute TTL (`src/lib/cache.ts`),
    so the upstream API is hit at most once per TTL window, not on every page
    load.
 3. **Claude** is used only as a reasoning layer: given the already-fetched
@@ -47,7 +47,7 @@ cp .env.local.example .env.local
 
 | Variable | Required | Notes |
 |---|---|---|
-| `DATABASE_URL` | yes | Defaults to a local SQLite file, no changes needed |
+| `DATABASE_URL` | yes | Postgres connection string (Neon locally and on Vercel); `DATABASE_URL_UNPOOLED` is also needed for migrations |
 | `FOOTBALL_DATA_API_KEY` | yes | From step 2 |
 | `ANTHROPIC_API_KEY` | yes | From step 2 |
 | `ANTHROPIC_MODEL` | no | Defaults to `claude-sonnet-5` |
@@ -72,7 +72,8 @@ and find the numeric `id` for your team in the response.
 npm run db:migrate
 ```
 
-This creates a local SQLite file and the cache table Prisma needs.
+This applies the Prisma migrations (CacheEntry, Competition, Ingestion,
+ScenarioFeedback) to the Postgres database in `DATABASE_URL`.
 
 ### 5. Run it
 
@@ -155,11 +156,9 @@ The numbers only mean something once a real number of brackets have been
 confirmed; with a handful of ingestions treat it as a smoke test.
 
 **⚠ Durability:** screenshot competitions are stored in the database and are
-*not re-fetchable from anywhere*. On Vercel, the default SQLite-in-`/tmp`
-setup (see "Deploying to Vercel" below) is wiped on cold starts — fine for
-the cache, **fatal for ingested competitions**. If you deploy screenshot
-ingestion anywhere serverless, point `DATABASE_URL` at a persistent
-database (Neon, Turso, Vercel Postgres, or any host with a real disk).
+*not re-fetchable from anywhere*. `DATABASE_URL` must point at a persistent
+Postgres (Neon in this project) — never an ephemeral store — or confirmed
+ingestions are lost.
 
 **⚠ No accounts yet:** Phase 1 has no user model — ingestion and
 confirmation are unauthenticated, so treat a deployment as single-tenant
@@ -196,22 +195,16 @@ origin checks).
 
 ## Deploying to Vercel
 
-Push to a GitHub repo, import it in Vercel, and set the same environment
-variables from `.env.local` in the Vercel project settings.
+The project is linked to a Vercel project with the Neon Postgres integration,
+which provisions `DATABASE_URL` / `DATABASE_URL_UNPOOLED` automatically. The
+remaining variables from `.env.local` (`FOOTBALL_DATA_API_KEY`,
+`ANTHROPIC_API_KEY`, `TRACKED_TEAM_ID`, and any optional ones) must be added
+with `vercel env add <NAME> production`.
 
-**Known limitation:** Vercel's serverless functions have a read-only
-filesystem except `/tmp`, and `/tmp` is not shared across function
-instances or persisted between invocations. The default `DATABASE_URL` from
-`.env.local` (a repo-relative path) isn't writable there at all, so
-`src/lib/db.ts` detects `VERCEL` and automatically points `DATABASE_URL` at
-`/tmp` instead, and `src/lib/cache.ts` (re)creates the cache table lazily
-since `/tmp` is wiped on every cold start. That means the SQLite cache works
-perfectly and durably for `npm run dev` and for any persistent host (a VPS,
-a Docker container, Railway/Fly.io, etc.); on Vercel it still works, but as
-a best-effort, per-instance cache — you'll get correct data, just with more
-upstream API calls than the TTL implies once traffic spans multiple cold
-starts. If you deploy to Vercel and start hitting football-data.org's rate
-limit, switch `DATABASE_URL` to a hosted Postgres/SQLite-compatible database
-(e.g. Vercel Postgres, Neon, or Turso) — the only change needed is the
-`datasource` block in `prisma/schema.prisma` and the connection string;
-`src/lib/cache.ts` and everything above it is unaffected.
+The build command (`package.json`) runs `prisma generate && prisma migrate
+deploy && next build`, so every production deploy applies pending migrations
+to Neon before building. `prisma migrate deploy` connects over
+`DATABASE_URL_UNPOOLED` (PgBouncer's transaction pooling can't hold the
+advisory locks migrations need); app queries use the pooled `DATABASE_URL`.
+
+Deploy with `vercel --prod`.

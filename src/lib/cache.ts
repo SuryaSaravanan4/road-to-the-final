@@ -7,27 +7,12 @@ export interface CacheResult<T> {
   stale: boolean;
 }
 
-let schemaReady: Promise<void> | null = null;
-
-// On Vercel, /tmp (see db.ts) is wiped on every cold start, so the cache
-// table can't rely on a one-time `prisma migrate deploy` — it's (re)created
-// lazily and idempotently the first time this module is used in a process.
-// Matches the shape of prisma/migrations' CacheEntry table exactly.
-function ensureSchema(): Promise<void> {
-  schemaReady ??= prisma
-    .$executeRawUnsafe(
-      `CREATE TABLE IF NOT EXISTS "CacheEntry" ("key" TEXT NOT NULL PRIMARY KEY, "payload" TEXT NOT NULL, "fetchedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`
-    )
-    .then(() => undefined);
-  return schemaReady;
-}
-
 // The cache is an optimization, not a dependency: if the store can't be read
-// or written (missing file, read-only fs, corrupt db), callers should
-// degrade to "always fetch fresh" instead of failing the whole request.
+// or written (unreachable db, connection limit), callers should degrade to
+// "always fetch fresh" instead of failing the whole request. The CacheEntry
+// table itself is created by `prisma migrate deploy` in the build step.
 async function readEntry(key: string) {
   try {
-    await ensureSchema();
     return await prisma.cacheEntry.findUnique({ where: { key } });
   } catch {
     return null;
@@ -36,7 +21,6 @@ async function readEntry(key: string) {
 
 async function writeEntry(key: string, payload: string, fetchedAt: Date): Promise<void> {
   try {
-    await ensureSchema();
     await prisma.cacheEntry.upsert({
       where: { key },
       create: { key, payload, fetchedAt },
