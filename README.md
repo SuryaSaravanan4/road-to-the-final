@@ -90,22 +90,17 @@ The app fetches on-demand with a 15-minute cache TTL — no page load ever
 waits on a fresh upstream call more often than that, and a manual "Refresh"
 button forces an immediate re-fetch.
 
-For proactive background refreshing, `src/app/api/cron/route.ts` is a
-pingable endpoint that forces a refresh. `vercel.json` wires it to Vercel
-Cron every 15 minutes (Vercel Cron on a paid plan; the Hobby tier only
-allows daily crons). On Hobby/free hosting, use a free external scheduler
-instead, e.g. a GitHub Actions workflow:
+For proactive background refreshing, `src/app/api/cron/route.ts` forces a
+refresh when pinged. Two schedulers hit it:
 
-```yaml
-on:
-  schedule:
-    - cron: "*/15 * * * *"
-jobs:
-  ping:
-    runs-on: ubuntu-latest
-    steps:
-      - run: curl -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" https://your-app.vercel.app/api/cron
-```
+- **`vercel.json`** wires it to Vercel Cron once daily (`0 8 * * *`) — the
+  Hobby tier caps Vercel Cron at one run per day regardless of the
+  expression, so this is the zero-dependency baseline.
+- **`.github/workflows/refresh.yml`** runs the real 15-minute cadence by
+  curling the same endpoint on a GitHub Actions schedule, sending
+  `CRON_SECRET` as a bearer token (and a Vercel protection-bypass header if
+  deployment protection is enabled). Set the `PROD_URL`, `CRON_SECRET`, and
+  optional `VERCEL_BYPASS_SECRET` repo secrets to activate it.
 
 ## Tracking a competition from a screenshot
 
@@ -192,6 +187,65 @@ re-ingestion diff/merge), the confidence-calibration pairing (which preview
 normalizations must not count as human corrections, and the metrics over
 them), and the upload security validations (image sniffing, rate limiting,
 origin checks).
+
+## Performance
+
+The ranking endpoint (`GET /api/path`) was load-tested on the live Vercel
+deployment against a screenshot-ingested 8-team bracket mid-tournament
+(quarter-finals complete, semi-finals drawn, final undecided), so every
+response exercises all three code paths at once: a finished round, a
+bracket-confirmed opponent, and a Claude-reasoned scenario set for the
+still-open slot.
+
+- **Tool:** [autocannon](https://github.com/mcollina/autocannon) 8.0, run
+  from a residential connection against the production alias.
+- **Server:** Vercel Hobby, function region `iad1`; Neon Postgres (free tier)
+  in `us-east-1`.
+- **State:** the 15-minute cache was pre-warmed before each run, so
+  steady-state requests are served from the `CacheEntry` table — two to three
+  indexed reads, a `JSON.parse`, and the deterministic ranking sort. The
+  Claude reasoning call (~2–3 s) fires only on the first request after a TTL
+  expiry and is **not** represented in the percentiles below.
+- Single runs of 10–30 s each, not averaged.
+
+| Concurrent connections | Requests | p50 | p95 | p99 | Throughput |
+|---|---|---|---|---|---|
+| 1   | 60 in 10 s   | 162 ms | 243 ms | 252 ms | ~6 req/s   |
+| 20  | 4.0k in 30 s | 140 ms | 209 ms | 300 ms | ~143 req/s |
+| 50  | 7.0k in 20 s | 133 ms | 216 ms | 292 ms | ~371 req/s |
+| 100 | 13k in 20 s  | 154 ms | 279 ms | 358 ms | ~630 req/s |
+
+Reproduce:
+
+```bash
+npx autocannon -c 20 -d 30 \
+  "https://<deployment>/api/path?provider=screenshot/<competitionId>&teamId=<teamId>"
+```
+
+### What this measures — and what it doesn't
+
+- **It's the warm-read path.** p50 is a couple of `CacheEntry` selects
+  against Neon plus JSON parsing plus the ranking sort (which is itself
+  sub-millisecond — see `tests/scenario-ranking.test.ts`). Roughly 20–40 ms
+  of every figure above is residential-client ↔ `iad1` round-trip, not server
+  work.
+- **No before/after improvement is claimed.** The one change made for
+  performance — `src/lib/db.ts` forcing the Prisma pool off the
+  `connection_limit=1` that ships in the Neon/Vercel connection string — is
+  decisive for a single long-lived process (locally, 20-connection p50 went
+  **7.6 s → 0.74 s**) but made no measurable difference on Vercel, where
+  Fluid Compute already runs several function instances, each with its own
+  client and connection:
+
+  | 20 connections | `connection_limit=1` | `connection_limit=10` |
+  |---|---|---|
+  | p50        | 126 ms      | 140 ms      |
+  | p95        | 193 ms      | 209 ms      |
+  | throughput | ~162 req/s  | ~143 req/s  |
+
+  The two deploys land within run-to-run noise (~±25 ms p50, ~±20 %
+  throughput on Hobby + free-tier Neon). The change was kept because it is
+  correct for non-serverless hosting, not because it moved these numbers.
 
 ## Deploying to Vercel
 
